@@ -176,8 +176,9 @@ class Clickstream(object):
             except:
                 self.t.rollback()
 
-            for key in self.max.keys():
-                print "Biggest " + key + ": " + str(self.max[key])
+            # Uncomment for column truncation debugging.
+            # for key in self.max.keys():
+            #     # print "Biggest " + key + ": " + str(self.max[key])
 
     def users_per_day(self):
         print "Processing: " + self.info['course']
@@ -216,6 +217,11 @@ class Clickstream(object):
 
         s = select([self.clickstream])
         users = self.conn.execute(s)
+        num_lines = 0
+        for user in users:
+            num_lines += 1
+        pbar = ProgressBar(widgets=['Event ', SimpleProgress()], maxval=num_lines).start()
+        count = 0
         for user in users:
             sql = """INSERT INTO {0}
                 (username, date_visited, clicks)
@@ -228,6 +234,8 @@ class Clickstream(object):
                 self.t.commit()
             except:
                 self.t.rollback()
+            count += 1
+            pbar.update(count)
 
 parser = argparse.ArgumentParser(description='Process some files.')
 parser.add_argument("-d", "--directory", help="Process an entire directory")
