@@ -1,14 +1,10 @@
-import cjson
-import logging
-import glob
-import warnings
-import ntpath
-import argparse
+from cjson import decode
+from glob import glob
+from warnings import filterwarnings
+from ntpath import basename
+from argparse import ArgumentParser
 import os
-warnings.filterwarnings('ignore', 'unknown table')
-
-logging.basicConfig(filename='example.log')
-logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+filterwarnings('ignore', 'unknown table')
 
 from sqlalchemy import Table, Column, create_engine, MetaData, VARCHAR, CHAR, TEXT, BIGINT, INTEGER
 from progressbar import SimpleProgress, ProgressBar
@@ -31,7 +27,7 @@ class Clickstream(object):
         #
         # password      The password of the user that has access privilages to the database.
 
-        course = ntpath.basename(course)
+        course = basename(course)
 
         self.user = {
             'hostname': "127.0.0.1",
@@ -127,7 +123,7 @@ class Clickstream(object):
             }
 
             for line in f:
-                data = cjson.decode(line.replace('\r\n', ''))
+                data = decode(line.replace('\r\n', ''))
 
                 if "user_agent" not in data.keys():
                     data['user_agent'] = 'Unknown'
@@ -206,6 +202,7 @@ class Clickstream(object):
             self.t.rollback()
 
     def clicks_per_user_per_day(self):
+        # Create Table to hold the number of clicks each user made on each day of the course.
         users_per_day = Table(self.info['database'] + "_clicks", self.metadata,
                               Column('username', VARCHAR(50)),
                               Column('date_visited', VARCHAR(10)),
@@ -214,14 +211,29 @@ class Clickstream(object):
                               mysql_charset='utf8mb4'
                               )
         users_per_day.create()
+
+        # Get a list of every username which clicked during the course
         sql = "SELECT DISTINCT username FROM {0}".format(self.info['database'])
-        usernames = []
         users = self.conn.execute(sql)
-        count = 0
+
+        username_count = 0
+        usernames = []
+
+        # Form an array with all the usernames. This is done to make the list iterable as the Object that returns from the
+        # execute command of SQLAlchemy can only be iterated through once. This allows us to get the length of the array
+        # to be able to generate a progress bar.
         for user in users:
             usernames.append(user[0])
-            count += 1
-        pbar = ProgressBar(widgets=['Event ', SimpleProgress()], maxval=count).start()
+            username_count += 1
+
+        # Initialise ProgressBar
+        pbar = ProgressBar(widgets=['Event ', SimpleProgress()], maxval=username_count).start()
+
+        # 1. For each username
+        # 2. Get every click they make
+        # 3. Group it by day, produce a count per day
+        # 4. Insert it into the _clicks database
+        counter = 0
         for user in usernames:
             sql = """INSERT INTO {0}
                 (username, date_visited, clicks)
@@ -235,31 +247,37 @@ class Clickstream(object):
             except:
                 self.t.rollback()
 
-            pbar.update(count)
-            count += 1
-        print "think"
+            pbar.update(counter)
+            counter += 1
 
-parser = argparse.ArgumentParser(description='Process some files.')
+# Initialise the command line argument parser
+parser = ArgumentParser(description='Process some files.')
 parser.add_argument("-d", "--directory", help="Process an entire directory")
 parser.add_argument("-f", "--file", help="Process a file")
 
 args = parser.parse_args()
+# If the user specifies a directory
 if args.directory:
-    for file_name in glob.glob(args.directory + '*.*'):
-        if os.path.isdir(args.directory):
+    # Check it really is a directory
+    if os.path.isdir(args.directory):
+        # For every file in the directory, run the script.
+        for file_name in glob(args.directory + '*.*'):
             a = Clickstream(file_name.split("_")[0].replace("-", ""), file_name)
             a.load()
             a.users_per_day()
             a.clicks_per_user_per_day()
             a.disconnect()
-        else:
+    else:
             print "You must specify a directory"
+# If the user specifies a file
 elif args.file:
-        if os.path.isfile(args.file):
-            a = Clickstream(str(args.file).split("_")[0].replace("-", ""), str(args.file))
-            a.load()
-            a.users_per_day()
-            a.clicks_per_user_per_day()
-            a.disconnect()
-        else:
-            print "You must specify a file"
+    # Check it really is a file
+    if os.path.isfile(args.file):
+        # Run the script on the file
+        a = Clickstream(str(args.file).split("_")[0].replace("-", ""), str(args.file))
+        a.load()
+        a.users_per_day()
+        a.clicks_per_user_per_day()
+        a.disconnect()
+    else:
+        print "You must specify a file"
