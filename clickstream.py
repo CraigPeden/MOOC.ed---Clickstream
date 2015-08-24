@@ -10,7 +10,7 @@ warnings.filterwarnings('ignore', 'unknown table')
 logging.basicConfig(filename='example.log')
 logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 
-from sqlalchemy import Table, Column, create_engine, MetaData, VARCHAR, CHAR, TEXT, BIGINT, INTEGER, select
+from sqlalchemy import Table, Column, create_engine, MetaData, VARCHAR, CHAR, TEXT, BIGINT, INTEGER
 from progressbar import SimpleProgress, ProgressBar
 
 
@@ -214,28 +214,30 @@ class Clickstream(object):
                               mysql_charset='utf8mb4'
                               )
         users_per_day.create()
-
-        s = select([self.clickstream])
-        users = self.conn.execute(s)
-        num_lines = 0
-        for user in users:
-            num_lines += 1
-        pbar = ProgressBar(widgets=['Event ', SimpleProgress()], maxval=num_lines).start()
+        sql = "SELECT DISTINCT username FROM {0}".format(self.info['database'])
+        usernames = []
+        users = self.conn.execute(sql)
         count = 0
         for user in users:
+            usernames.append(user[0])
+            count += 1
+        pbar = ProgressBar(widgets=['Event ', SimpleProgress()], maxval=count).start()
+        for user in usernames:
             sql = """INSERT INTO {0}
                 (username, date_visited, clicks)
                 SELECT username, from_unixtime(timestamp / 1000, '%%Y-%%m-%%d') as date_visited, count(username) as clicks FROM {1}
                 WHERE username = "{2}"
-                GROUP BY date_visited;""".format(self.info['database'] + "_clicks", self.info['database'], user[0])
+                GROUP BY date_visited;""".format(self.info['database'] + "_clicks", self.info['database'], user)
 
             try:
                 self.conn.execute(sql)
                 self.t.commit()
             except:
                 self.t.rollback()
-            count += 1
+
             pbar.update(count)
+            count += 1
+        print "think"
 
 parser = argparse.ArgumentParser(description='Process some files.')
 parser.add_argument("-d", "--directory", help="Process an entire directory")
